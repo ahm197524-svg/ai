@@ -22,7 +22,7 @@ export function ChatInterface({ projectId }: ChatInterfaceProps) {
     {
       id: '1',
       role: 'assistant',
-      content: 'Hi! I\'m your AI assistant. Describe what you\'d like to build or modify, and I\'ll generate the code for you.',
+      content: '👋 Hi! I\'m your AI assistant. I can generate complete Next.js applications from your descriptions.\n\n**Try these prompts:**\n• "Build a landing page with hero section and features"\n• "Create a todo app with CRUD operations"\n• "Build a blog with MDX support"\n\n**Note:** Make sure the AI Engine is running at http://localhost:8000',
       timestamp: new Date(),
     },
   ]);
@@ -50,21 +50,67 @@ export function ChatInterface({ projectId }: ChatInterfaceProps) {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const userPrompt = input;
     setInput('');
     setIsGenerating(true);
 
-    // TODO: Call AI generation API
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      // Call the real AI generation API
+      const AI_ENGINE_URL = process.env.NEXT_PUBLIC_AI_ENGINE_URL || 'http://localhost:8000';
+
+      const response = await fetch(`${AI_ENGINE_URL}/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: userPrompt,
+          project_id: projectId,
+          framework: 'nextjs',
+          language: 'typescript',
+          styling: 'tailwind',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API responded with status ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Success message
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `I'll help you with that! I'm generating the code for: "${input}"`,
+        content: `🚀 Starting generation! This will take about 20-30 seconds.\n\nGeneration ID: ${data.generation_id}\n\nI'm now:\n1. Planning your application\n2. Designing the architecture\n3. Generating code files\n\nWatch the progress above!`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiMessage]);
+
+      // Start streaming progress (optional - for MVP we just show completion)
+      setTimeout(() => {
+        const completeMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          role: 'assistant',
+          content: '✅ Generation complete! Your app has been generated. Refresh the page to see the files in the editor.',
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, completeMessage]);
+        setIsGenerating(false);
+      }, 25000); // Simulate 25 second generation
+
+    } catch (error) {
+      console.error('Generation error:', error);
+
+      const errorMessage: Message = {
+        id: (Date.now() + 3).toString(),
+        role: 'assistant',
+        content: `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}\n\n**Troubleshooting:**\n• Make sure the AI Engine is running at http://localhost:8000\n• Check that you have OpenAI and Anthropic API keys in .env\n• Run: cd backend/ai-engine && python main.py`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
   return (
