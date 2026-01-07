@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USER MANAGEMENT
+// ============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String?
+  name          String?
+  avatarUrl     String?   @map("avatar_url")
+
+  oauthProvider String?   @map("oauth_provider")
+  oauthId       String?   @map("oauth_id")
+
+  subscriptionTier String @default("free") @map("subscription_tier")
+
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  lastLoginAt   DateTime? @map("last_login_at")
+  isActive      Boolean   @default(true) @map("is_active")
+
+  projects      Project[]
+  conversations Conversation[]
+  messages      Message[]
+
+  @@map("users")
+}
+
+// ============================================================================
+// PROJECT MANAGEMENT
+// ============================================================================
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+
+  ownerId     String   @map("owner_id")
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  framework   String   @default("nextjs")
+  language    String   @default("typescript")
+  styling     String   @default("tailwind")
+  database    String   @default("sqlite")
+
+  githubRepoUrl String? @map("github_repo_url")
+  githubRepoId  String? @map("github_repo_id")
+
+  status      String   @default("active")
+  visibility  String   @default("private")
+
+  sandboxId   String?  @map("sandbox_id")
+  sandboxUrl  String?  @map("sandbox_url")
+  sandboxStatus String? @map("sandbox_status")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  lastGeneratedAt DateTime? @map("last_generated_at")
+
+  files         ProjectFile[]
+  dependencies  ProjectDependency[]
+  conversations Conversation[]
+  generations   Generation[]
+
+  @@map("projects")
+}
+
+model ProjectFile {
+  id          String   @id @default(cuid())
+  projectId   String   @map("project_id")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  filePath    String   @map("file_path")
+  content     String   @db.Text
+  contentHash String?  @map("content_hash")
+  sizeBytes   Int?     @map("size_bytes")
+
+  generatedBy String?  @map("generated_by")
+  generationId String? @map("generation_id")
+  generation  Generation? @relation(fields: [generationId], references: [id])
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([projectId, filePath])
+  @@map("project_files")
+}
+
+model ProjectDependency {
+  id             String   @id @default(cuid())
+  projectId      String   @map("project_id")
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  packageName    String   @map("package_name")
+  version        String
+  dependencyType String   @map("dependency_type")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([projectId, packageName])
+  @@map("project_dependencies")
+}
+
+// ============================================================================
+// AI GENERATION SYSTEM
+// ============================================================================
+
+model Conversation {
+  id        String   @id @default(cuid())
+  projectId String   @map("project_id")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status    String   @default("active")
+  totalMessages Int  @default(0) @map("total_messages")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  messages    Message[]
+  generations Generation[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String   @map("conversation_id")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  role           String
+  content        String   @db.Text
+
+  userId         String?  @map("user_id")
+  user           User?    @relation(fields: [userId], references: [id])
+
+  agentType      String?  @map("agent_type")
+  model          String?
+  promptTokens   Int?     @map("prompt_tokens")
+  completionTokens Int?   @map("completion_tokens")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+  sequenceNumber Int      @map("sequence_number")
+
+  generations    Generation[]
+
+  @@map("messages")
+}
+
+model Generation {
+  id             String   @id @default(cuid())
+  projectId      String   @map("project_id")
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  conversationId String?  @map("conversation_id")
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+
+  messageId      String?  @map("message_id")
+  message        Message? @relation(fields: [messageId], references: [id])
+
+  userPrompt     String   @db.Text @map("user_prompt")
+  extractedRequirements Json? @map("extracted_requirements")
+
+  plan           Json?
+  architecture   Json?
+
+  status         String   @default("pending")
+  currentStep    String?  @map("current_step")
+  progressPercentage Int  @default(0) @map("progress_percentage")
+
+  filesCreated   Int      @default(0) @map("files_created")
+  filesModified  Int      @default(0) @map("files_modified")
+  filesDeleted   Int      @default(0) @map("files_deleted")
+
+  errorMessage   String?  @db.Text @map("error_message")
+  retryCount     Int      @default(0) @map("retry_count")
+
+  startedAt      DateTime? @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  totalDurationMs Int?    @map("total_duration_ms")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  files          ProjectFile[]
+  steps          GenerationStep[]
+
+  @@map("generations")
+}
+
+model GenerationStep {
+  id             String   @id @default(cuid())
+  generationId   String   @map("generation_id")
+  generation     Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  stepType       String   @map("step_type")
+  agentType      String   @map("agent_type")
+
+  input          Json?
+  output         Json?
+
+  status         String   @default("pending")
+  errorMessage   String?  @db.Text @map("error_message")
+
+  model          String?
+  promptTokens   Int?     @map("prompt_tokens")
+  completionTokens Int?   @map("completion_tokens")
+
+  startedAt      DateTime? @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  durationMs     Int?     @map("duration_ms")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+  sequenceNumber Int      @map("sequence_number")
+
+  @@map("generation_steps")
+}
